@@ -1,6 +1,7 @@
 import os
 import cv2
 import torch
+import pprint 
 import numpy as np
 from pathlib import Path
 from typing import Tuple, List
@@ -21,7 +22,8 @@ class Benchmark(BaseDataset):
                  flo_path: str,
                  scale: int,
                  crop_size: int = 64,
-                 rgb_range: int = 1
+                 rgb_range: int = 1, 
+                 img_type: str = 'png'
                  ) -> None:
         super(Benchmark, self).__init__(dataroot=dataroot,
                                         name=name,
@@ -29,14 +31,13 @@ class Benchmark(BaseDataset):
                                         scale=scale,
                                         crop_size=crop_size,
                                         rgb_range=rgb_range)
-
-        self.hr_dir_path = Path(dataroot).resolve().joinpath(img_path).__str__()
-        self.fl_dir_path = Path(dataroot).resolve().joinpath(flo_path).__str__()
-
-        self.fl_files = [os.path.join(self.fl_dir_path, x) for x in sorted(os.listdir(self.fl_dir_path))]
-        self.hr_files = [os.path.join(self.hr_dir_path, x) for x in sorted(os.listdir(self.hr_dir_path))]
-
-        print(f"{len(self.fl_files)=}")
+        
+        self.hr_dir_path = Path(dataroot).resolve().joinpath(img_path)
+        self.fl_dir_path = Path(dataroot).resolve().joinpath(flo_path)
+        self.hr_files = sorted(self.hr_dir_path.rglob(f'**/*.{img_type}'))
+        # For every given image: search corresponding .flo file. If not found: correspond to None 
+        self.fl_files = [(self.fl_dir_path).__str__() + f'/{x.stem}.flo' for x in self.hr_files]
+        self.fl_files = [x if Path(x).exists() else None for x in self.fl_files]
         self.transforms = transforms.Compose([
             transforms.ToTensor(rgb_range=self.rgb_range)
         ])
@@ -47,9 +48,10 @@ class Benchmark(BaseDataset):
         hr = Image.open(self.hr_files[idx]).convert("RGB")
         hr = self.transforms(hr)
         lr, hr = self.degrade(hr)
-        try:
-            fl: torch.Tensor = read_flo_file(self.fl_files[idx])
-        except IndexError:
+        # If None for given image - pair with empty tensor
+        if flo_filepath := self.fl_files[idx]:
+            fl: torch.Tensor = read_flo_file(flo_filepath)
+        else:
             fl: torch.Tensor = torch.empty(size=hr.shape)
 
         # assert that images are divisable by 2
@@ -122,4 +124,14 @@ def sintel(config):
         rgb_range=config.rgb_range,
         img_path="training/clean/mountain_1",
         flo_path="training/flow/mountain_1"
+    )
+def sintel_full(config):
+    return Benchmark(
+        dataroot=config.dataroot, 
+        name="Sintel",
+        mode="val",
+        scale=config.scale, 
+        rgb_range=config.rgb_range,
+        img_path="training/clean",
+        flo_path="training/flow"
     )
