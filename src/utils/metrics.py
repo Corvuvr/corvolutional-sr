@@ -3,8 +3,52 @@
 # -----------------------------------------------------------------------------------
 
 import cv2
+import time
 import torch
+import logging
 import numpy as np
+from collections import OrderedDict
+
+class MetricGauge():
+    def __init__(self, log_level = logging.INFO):
+        # Logs
+        logging.basicConfig(level=log_level)     # Configure logging
+        logger = logging.getLogger(__name__)        # Create logger for the module
+        # Metrics
+        metrics_ = OrderedDict()
+        metrics_["psnr_rgb" ] = []
+        metrics_["psnr_y"   ] = []
+        metrics_["ssim_rgb" ] = []
+        metrics_["ssim_y"   ] = []
+        metrics_["time"     ] = []
+        self.metrics = metrics_
+        self.logger  = logger
+        self.timer: float = time.time()
+
+    def extract_metrics(self, img1, img2):
+        self.metrics["psnr_y"]      .append(calculate_psnr(img1, img2, crop_border=0, test_y_channel=True))
+        self.metrics["ssim_y"]      .append(calculate_ssim(img1, img2, crop_border=0, test_y_channel=True))
+        self.metrics["psnr_rgb"]    .append(calculate_psnr(img1, img2, crop_border=0))
+        self.metrics["ssim_rgb"]    .append(calculate_ssim(img1, img2, crop_border=0))
+
+    def summary(self):
+        ave_psnr_rgb = sum(self.metrics["psnr_rgb"]) / len(self.metrics["psnr_rgb"])
+        ave_ssim_rgb = sum(self.metrics["ssim_rgb"]) / len(self.metrics["ssim_rgb"])
+        ave_psnr_y   = sum(self.metrics["psnr_y"]  ) / len(self.metrics["psnr_y"]  )
+        ave_ssim_y   = sum(self.metrics["ssim_y"]  ) / len(self.metrics["ssim_y"]  )      
+        ave_time     = sum(self.metrics["time"]    ) / len(self.metrics["time"]    ) 
+        self.logger.info(' Average PSNR (RGB):  {:.6f} dB'  .format(ave_psnr_rgb))
+        self.logger.info(' Average SSIM (RGB):  {:.6f}'     .format(ave_ssim_rgb))
+        self.logger.info(' Average PSNR (Y):    {:.6f} dB'  .format(ave_psnr_y)  )
+        self.logger.info(' Average SSIM (Y):    {:.6f}'     .format(ave_ssim_y)  )
+        self.logger.info(' Average Time:        {:.6f}'     .format(ave_time)    )   
+
+    def timer_set(self):
+        self.timer = time.time()
+
+    def timer_reset(self):
+        self.timer = time.time() - self.timer
+        self.metrics["time"].append(self.timer)
 
 def calculate_psnr(img1, img2, crop_border, input_order='HWC', test_y_channel=False):
     """Calculate PSNR (Peak Signal-to-Noise Ratio).
