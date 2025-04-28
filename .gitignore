@@ -1,0 +1,5 @@
+__pycache__/
+results/
+!README.md
+*.py[cod]
+*$py.class
