@@ -1,0 +1,11 @@
+opencv-python
+pillow
+scikit-image              
+timm
+numpy
+scipy
+tqdm
+wandb
+matplotlib
+torchmetrics
+kornia
