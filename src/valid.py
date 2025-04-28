@@ -36,7 +36,7 @@ class CorvolutionalLoader():
         self.device = device
         self.net = net
     
-    def valid(self):
+    def evaluate(self):
         # Metrics
         test_results = OrderedDict()
         test_results["psnr_rgb"] = []
@@ -45,8 +45,8 @@ class CorvolutionalLoader():
         test_results["ssim_y"] = []
         test_results["time"] = []
         test_results = test_results
-        
-        for dataset in self.datasets:
+
+        for i, dataset in enumerate(self.datasets):
             test_loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=1,
@@ -56,7 +56,7 @@ class CorvolutionalLoader():
                 drop_last=False
             )
             with torch.no_grad():
-                print("Testing...")   
+                print("Evaluating...")   
                 for batch in tqdm(test_loader):
                     lr_img = batch["lr"].to(self.device)
                     hr_img = batch["hr"].to(self.device)
@@ -79,7 +79,7 @@ class CorvolutionalLoader():
                     test_results["psnr_y"]  .append(metrics.calculate_psnr(out, hr_img, crop_border=0, test_y_channel=True))
                     test_results["ssim_y"]  .append(metrics.calculate_ssim(out, hr_img, crop_border=0, test_y_channel=True))
 
-                print(f"------> Results of X{self.config.scale} for benchmark: {self.benchmark}")
+                print(f"------> Results of X{self.config.scale} for benchmark: {self.config.benchmark[i]}")
                 ave_psnr_rgb = sum(test_results["psnr_rgb"]) / len(test_results["psnr_rgb"])
                 print('------> Average PSNR (RGB): {:.6f} dB'.format(ave_psnr_rgb))
                 ave_ssim_rgb = sum(test_results["ssim_rgb"]) / len(test_results["ssim_rgb"])
@@ -93,4 +93,4 @@ class CorvolutionalLoader():
 
 if __name__ == "__main__":
     c = CorvolutionalLoader(config=args)
-    c.valid()
+    c.evaluate()
