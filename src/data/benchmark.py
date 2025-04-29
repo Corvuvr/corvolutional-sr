@@ -50,9 +50,9 @@ class Benchmark(BaseDataset):
         lr, hr = self.degrade(hr)
         # If None for given image - pair with empty tensor
         if flo_filepath := self.fl_files[idx]:
-            fl: torch.Tensor = read_flo_file(flo_filepath)
+            fl: torch.Tensor = self.degrade(read_flo_file(flo_filepath).permute(2,0,1))[0]
         else:
-            fl: torch.Tensor = torch.empty(size=hr.shape)
+            fl: torch.Tensor = torch.empty(size=lr.shape)
 
         # assert that images are divisable by 2
         c, lr_h, lr_w = lr.shape

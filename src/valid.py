@@ -21,8 +21,9 @@ class CorvolutionalLoader():
     def __init__(self, config: ArgumentParser):
         # Model
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        net = torch.nn.DataParallel(model.__dict__[config.arch](config)).to(device)
-        net = weights.load_checkpoint(net, device, config.checkpoint_id)
+        model_config: dict = model.__dict__[config.arch](config)
+        net = torch.nn.DataParallel(model_config).to(device)
+        net = weights.load_checkpoint(net, device, config.checkpoint_id, strict=False)
         if config.rep:
             rep_model = weights.reparameterize(
                 config=config,
@@ -32,7 +33,7 @@ class CorvolutionalLoader():
             )
             net = rep_model
         net.eval()
-        
+        pp(model_config)
         # Datasets
         self.datasets: Sequence[dict[str, torch.utils.data.Dataset]] = list(
             dict(zip(
@@ -68,10 +69,12 @@ class CorvolutionalLoader():
             for batch in tqdm(test_loader):
                 lr_img = batch["lr"].to(self.device)
                 hr_img = batch["hr"].to(self.device)
+                flow   = batch["fl"].to(self.device)
                 # Upscale
                 gauge.timer_set()
-                sr_img = self.upscale(lr_img)
+                sr_img = self.upscale((lr_img, flow))
                 gauge.timer_reset()
+                
                 gauge.extract_metrics(sr_img, hr_img)
         return gauge
 
@@ -90,12 +93,12 @@ class CorvolutionalLoader():
             for batch in tqdm(test_loader):
                 lr_img = batch["lr"].to(self.device)
                 hr_img = batch["hr"].to(self.device)
-                
+                flow   = batch["fl"].to(self.device)
                 # Upscale
                 gauge.timer_set()
-                sr_img = self.upscale(lr_img)
+                sr_img = self.upscale((lr_img, flow))
                 gauge.timer_reset()
-
+                
                 loss = self.loss_fn(sr_img, hr_img)
                 optimizer.zero_grad()
                 loss.backward()

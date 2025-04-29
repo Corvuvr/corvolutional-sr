@@ -64,10 +64,12 @@ class RT4KSR_Rep(nn.Module):
         
     def forward(self, x):
         # stage 1
-        hf = x - self.gaussian(x)
-        
+        lr_img, flow = x
+        hf     = lr_img - self.gaussian(lr_img)
+        # hf_flo = flow - self.gaussian(flow)
+
         # unshuffle to save computation
-        x_unsh = self.down(x)
+        x_unsh  = self.down(lr_img)
         hf_unsh = self.down(hf)
         
         shallow_feats_hf = self.head(hf_unsh)        
@@ -75,7 +77,7 @@ class RT4KSR_Rep(nn.Module):
 
         # stage 2            
         deep_feats = self.body(shallow_feats_lr)
-        hf_feats = self.hfb(shallow_feats_hf)
+        hf_feats   = self.hfb(shallow_feats_hf)
 
         # stage 3
         if self.forget:
