@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 
 from tqdm import tqdm
+from pprint import pp
 from typing import Sequence
 from collections import Counter
 from argparse import ArgumentParser
@@ -117,13 +118,15 @@ if __name__ == "__main__":
     c = CorvolutionalLoader(config=args)
     num_epochs: int = 2
     num_rounds: int = 2
+    train_metrics = Counter()
+    test_metrics  = Counter()
     for i in range(num_rounds):
-        acc = Counter()
+        epoch_counter = Counter()
         for epoch in range(num_epochs):
             performance = c.fit()
-            acc.update(performance.avg())
-        train_metrics: dict = dict(map(lambda kv: (kv[0], kv[1] / num_epochs), dict(acc).items()))
-        test_metrics:  dict = c.evaluate().avg()
-        logger.info(f"Train metrics: \t{train_metrics}")
-        logger.info(f"Test metrics:  \t{test_metrics}")
+            epoch_counter.update(performance.avg())
+        train_metrics.update(dict(map(lambda kv: (kv[0], [kv[1] / num_epochs]), dict(epoch_counter).items())))
+        test_metrics .update(dict(map(lambda kv: (kv[0], [kv[1]]), c.evaluate().avg().items())))
+    pp(train_metrics)
+    pp(test_metrics)
         
