@@ -31,6 +31,15 @@ class MetricGauge():
         self.metrics["psnr_rgb"]    .append(calculate_psnr(img1, img2, crop_border=0))
         self.metrics["ssim_rgb"]    .append(calculate_ssim(img1, img2, crop_border=0))
 
+    def avg(self):
+        avg = dict()
+        avg["psnr_rgb" ] = float(sum(self.metrics["psnr_rgb"]) / len(self.metrics["psnr_rgb"]))
+        avg["psnr_y"   ] = float(sum(self.metrics["ssim_rgb"]) / len(self.metrics["ssim_rgb"]))
+        avg["ssim_rgb" ] = float(sum(self.metrics["psnr_y"]  ) / len(self.metrics["psnr_y"]  ))
+        avg["ssim_y"   ] = float(sum(self.metrics["ssim_y"]  ) / len(self.metrics["ssim_y"]  ))
+        avg["time"     ] = float(sum(self.metrics["time"]    ) / len(self.metrics["time"]    ))
+        return avg
+
     def summary(self):
         ave_psnr_rgb = sum(self.metrics["psnr_rgb"]) / len(self.metrics["psnr_rgb"])
         ave_ssim_rgb = sum(self.metrics["ssim_rgb"]) / len(self.metrics["ssim_rgb"])

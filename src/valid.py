@@ -1,10 +1,10 @@
-import math
 import logging
 import torch
 import torch.nn.functional as F
 
 from tqdm import tqdm
 from typing import Sequence
+from collections import Counter
 from argparse import ArgumentParser
 
 import data
@@ -41,9 +41,10 @@ class CorvolutionalLoader():
             )) 
             for benchmark in config.benchmark
         )
-        self.config = config
-        self.device = device
-        self.net    = net
+        self.config  = config
+        self.device  = device
+        self.loss_fn = torch.nn.functional.l1_loss
+        self.net     = net
        
     def upscale(self, img: torch.Tensor):
         if self.config.bicubic:
@@ -64,7 +65,6 @@ class CorvolutionalLoader():
                 shuffle=False, 
                 drop_last=False
             )
-            logger.info("Evaluating...")   
             for batch in tqdm(test_loader):
                 lr_img = batch["lr"].to(self.device)
                 hr_img = batch["hr"].to(self.device)
@@ -77,8 +77,53 @@ class CorvolutionalLoader():
                 hr_img *= 255.
                 hr_img = image.tensor2uint(hr_img)
                 gauge.extract_metrics(sr_img, hr_img)
-        gauge.summary()
+        return gauge
+
+    def fit(self):
+        gauge = metrics.MetricGauge(log_level=logging.root.level)
+        for i, dataset in enumerate(self.datasets):
+            test_loader = torch.utils.data.DataLoader(
+                dataset["train"],
+                batch_size=1,
+                num_workers=1,
+                pin_memory=True,
+                shuffle=False, 
+                drop_last=False
+            )
+            optimizer = torch.optim.SGD(self.net.parameters(), lr=1e-4, momentum=0.9)  
+            for batch in tqdm(test_loader):
+                lr_img = batch["lr"].to(self.device)
+                hr_img = batch["hr"].to(self.device)
+                # Upscale
+                gauge.timer_set()
+                sr_img = self.upscale(lr_img)
+                gauge.timer_reset()
+                
+                loss = self.loss_fn(sr_img, hr_img)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                sr_img *= 255.
+                sr_img = image.tensor2uint(sr_img)
+                hr_img *= 255.
+                hr_img = image.tensor2uint(hr_img)
+                gauge.extract_metrics(sr_img, hr_img)
+        
+        return gauge
 
 if __name__ == "__main__":
+    
     c = CorvolutionalLoader(config=args)
-    c.evaluate()
+    num_epochs: int = 2
+    num_rounds: int = 2
+    for i in range(num_rounds):
+        acc = Counter()
+        for epoch in range(num_epochs):
+            performance = c.fit()
+            acc.update(performance.avg())
+        train_metrics: dict = dict(map(lambda kv: (kv[0], kv[1] / num_epochs), dict(acc).items()))
+        test_metrics:  dict = c.evaluate().avg()
+        logger.info(f"Train metrics: \t{train_metrics}")
+        logger.info(f"Test metrics:  \t{test_metrics}")
+        
