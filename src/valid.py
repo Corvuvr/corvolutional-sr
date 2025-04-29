@@ -1,7 +1,6 @@
 import logging
 import torch
 import torch.nn.functional as F
-
 from tqdm import tqdm
 from pprint import pp
 from typing import Sequence
@@ -73,10 +72,6 @@ class CorvolutionalLoader():
                 gauge.timer_set()
                 sr_img = self.upscale(lr_img)
                 gauge.timer_reset()
-                sr_img *= 255.
-                sr_img = image.tensor2uint(sr_img)
-                hr_img *= 255.
-                hr_img = image.tensor2uint(hr_img)
                 gauge.extract_metrics(sr_img, hr_img)
         return gauge
 
@@ -95,22 +90,18 @@ class CorvolutionalLoader():
             for batch in tqdm(test_loader):
                 lr_img = batch["lr"].to(self.device)
                 hr_img = batch["hr"].to(self.device)
+                
                 # Upscale
                 gauge.timer_set()
                 sr_img = self.upscale(lr_img)
                 gauge.timer_reset()
-                
+
                 loss = self.loss_fn(sr_img, hr_img)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-                sr_img *= 255.
-                sr_img = image.tensor2uint(sr_img)
-                hr_img *= 255.
-                hr_img = image.tensor2uint(hr_img)
                 gauge.extract_metrics(sr_img, hr_img)
-        
         return gauge
 
 if __name__ == "__main__":

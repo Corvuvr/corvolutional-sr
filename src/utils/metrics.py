@@ -8,6 +8,7 @@ import torch
 import logging
 import numpy as np
 from collections import OrderedDict
+from torchmetrics.image import StructuralSimilarityIndexMeasure as SSIM, PeakSignalNoiseRatio as PSNR
 
 class MetricGauge():
     def __init__(self, log_level = logging.INFO):
@@ -16,41 +17,34 @@ class MetricGauge():
         logger = logging.getLogger(__name__)        # Create logger for the module
         # Metrics
         metrics_ = OrderedDict()
-        metrics_["psnr_rgb" ] = []
-        metrics_["psnr_y"   ] = []
-        metrics_["ssim_rgb" ] = []
-        metrics_["ssim_y"   ] = []
-        metrics_["time"     ] = []
+        metrics_["ssim"   ] = []
+        metrics_["psnr"   ] = []
+        metrics_["time"   ] = []
         self.metrics = metrics_
         self.logger  = logger
         self.timer: float = time.time()
 
     def extract_metrics(self, img1, img2):
-        self.metrics["psnr_y"]      .append(calculate_psnr(img1, img2, crop_border=0, test_y_channel=True))
-        self.metrics["ssim_y"]      .append(calculate_ssim(img1, img2, crop_border=0, test_y_channel=True))
-        self.metrics["psnr_rgb"]    .append(calculate_psnr(img1, img2, crop_border=0))
-        self.metrics["ssim_rgb"]    .append(calculate_ssim(img1, img2, crop_border=0))
+        ssim = SSIM(data_range=1.0)
+        psnr = PSNR(data_range=1.0)
+        img1, img2 = img1.to('cpu'), img2.to('cpu')
+        self.metrics["ssim"].append(ssim(img1, img2))
+        self.metrics["psnr"].append(psnr(img1, img2))
 
     def avg(self):
         avg = dict()
-        avg["psnr_rgb" ] = float(sum(self.metrics["psnr_rgb"]) / len(self.metrics["psnr_rgb"]))
-        avg["psnr_y"   ] = float(sum(self.metrics["ssim_rgb"]) / len(self.metrics["ssim_rgb"]))
-        avg["ssim_rgb" ] = float(sum(self.metrics["psnr_y"]  ) / len(self.metrics["psnr_y"]  ))
-        avg["ssim_y"   ] = float(sum(self.metrics["ssim_y"]  ) / len(self.metrics["ssim_y"]  ))
-        avg["time"     ] = float(sum(self.metrics["time"]    ) / len(self.metrics["time"]    ))
+        avg["ssim"   ] = float(sum(self.metrics["ssim"]) / len(self.metrics["ssim"]))
+        avg["psnr"   ] = float(sum(self.metrics["psnr"]) / len(self.metrics["psnr"]))
+        avg["time"   ] = float(sum(self.metrics["time"]) / len(self.metrics["time"]))
         return avg
 
     def summary(self):
-        ave_psnr_rgb = sum(self.metrics["psnr_rgb"]) / len(self.metrics["psnr_rgb"])
-        ave_ssim_rgb = sum(self.metrics["ssim_rgb"]) / len(self.metrics["ssim_rgb"])
-        ave_psnr_y   = sum(self.metrics["psnr_y"]  ) / len(self.metrics["psnr_y"]  )
-        ave_ssim_y   = sum(self.metrics["ssim_y"]  ) / len(self.metrics["ssim_y"]  )      
-        ave_time     = sum(self.metrics["time"]    ) / len(self.metrics["time"]    ) 
-        self.logger.info(' Average PSNR (RGB):  {:.6f} dB'  .format(ave_psnr_rgb))
-        self.logger.info(' Average SSIM (RGB):  {:.6f}'     .format(ave_ssim_rgb))
-        self.logger.info(' Average PSNR (Y):    {:.6f} dB'  .format(ave_psnr_y)  )
-        self.logger.info(' Average SSIM (Y):    {:.6f}'     .format(ave_ssim_y)  )
-        self.logger.info(' Average Time:        {:.6f}'     .format(ave_time)    )   
+        ave_psnr = sum(self.metrics["psnr"]) / len(self.metrics["psnr"])
+        ave_ssim = sum(self.metrics["ssim"]) / len(self.metrics["ssim"])      
+        ave_time = sum(self.metrics["time"]) / len(self.metrics["time"]) 
+        self.logger.info(' Average PSNR:\t{:.6f} dB'.format(ave_psnr))
+        self.logger.info(' Average SSIM:\t{:.6f}'   .format(ave_ssim))
+        self.logger.info(' Average Time:\t{:.6f}'   .format(ave_time))   
 
     def timer_set(self):
         self.timer = time.time()
