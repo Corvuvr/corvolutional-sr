@@ -1,3 +1,4 @@
+import math
 import logging
 import torch
 import torch.nn.functional as F
@@ -31,12 +32,27 @@ class CorvolutionalLoader():
             )
             net = rep_model
         net.eval()
+        
         # Datasets
-        self.datasets: Sequence[torch.utils.data.Dataset] = [data.__dict__[benchmark](config) for benchmark in config.benchmark]
+        self.datasets: Sequence[dict[str, torch.utils.data.Dataset]] = list(
+            dict(zip(
+                ["train", "test"], 
+                self.split_dataset(dataset=data.__dict__[benchmark](config))
+            )) 
+            for benchmark in config.benchmark
+        )
         self.config = config
         self.device = device
-        self.net = net
+        self.net    = net
     
+    def split_dataset(self, dataset, train_split: float = 0.8):
+        train_size  = math.ceil(len(dataset) * train_split)
+        indices     = torch.randperm(len(dataset))            
+        return [
+            torch.utils.data.Subset(dataset, indices[:train_size ]),
+            torch.utils.data.Subset(dataset, indices[ train_size:]),
+        ]
+       
     def upscale(self, img: torch.Tensor):
         if self.config.bicubic:
             out = F.interpolate(img, scale_factor=self.config.scale, mode="bicubic", align_corners=False).clamp(min=0, max=1)
@@ -49,7 +65,7 @@ class CorvolutionalLoader():
         gauge = metrics.MetricGauge(log_level=logging.root.level)
         for i, dataset in enumerate(self.datasets):
             test_loader = torch.utils.data.DataLoader(
-                dataset,
+                dataset["test"],
                 batch_size=1,
                 num_workers=1,
                 pin_memory=True,
