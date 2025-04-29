@@ -37,21 +37,13 @@ class CorvolutionalLoader():
         self.datasets: Sequence[dict[str, torch.utils.data.Dataset]] = list(
             dict(zip(
                 ["train", "test"], 
-                self.split_dataset(dataset=data.__dict__[benchmark](config))
+                data.__dict__[benchmark](config).split(train_split = 0.8)
             )) 
             for benchmark in config.benchmark
         )
         self.config = config
         self.device = device
         self.net    = net
-    
-    def split_dataset(self, dataset, train_split: float = 0.8):
-        train_size  = math.ceil(len(dataset) * train_split)
-        indices     = torch.randperm(len(dataset))            
-        return [
-            torch.utils.data.Subset(dataset, indices[:train_size ]),
-            torch.utils.data.Subset(dataset, indices[ train_size:]),
-        ]
        
     def upscale(self, img: torch.Tensor):
         if self.config.bicubic:

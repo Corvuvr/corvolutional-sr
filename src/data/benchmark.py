@@ -1,10 +1,10 @@
 import os
 import cv2
 import torch
-import pprint 
+import math 
 import numpy as np
 from pathlib import Path
-from typing import Tuple, List
+from typing import Tuple, Sequence
 
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -70,7 +70,15 @@ class Benchmark(BaseDataset):
     
     def __len__(self):
         return len(self.hr_files)
-       
+
+    def split(self, train_split: float = 0.8) -> Sequence[torch.utils.data.Subset]:
+        train_size  = math.ceil(len(self) * train_split)
+        indices     = torch.randperm(len(self))            
+        return [
+            torch.utils.data.Subset(self, indices[:train_size ]),
+            torch.utils.data.Subset(self, indices[ train_size:]),
+        ]
+
 def read_flo_file(filename: str) -> torch.Tensor:
     with open(filename, 'rb') as f:
         magic = np.fromfile(f, np.float32, count=1)[0]
