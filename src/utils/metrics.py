@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------------
 # https://github.com/JingyunLiang/SwinIR/blob/main/utils/util_calculate_psnr_ssim.py
 # -----------------------------------------------------------------------------------
-
+import gc
 import cv2
 import time
 import torch
@@ -30,7 +30,6 @@ class MetricGauge():
         img1, img2 = img1.to('cpu'), img2.to('cpu')
         self.metrics["ssim"].append(ssim(img1, img2))
         self.metrics["psnr"].append(psnr(img1, img2))
-
     def avg(self):
         avg = dict()
         avg["ssim"   ] = float(sum(self.metrics["ssim"]) / len(self.metrics["ssim"]))

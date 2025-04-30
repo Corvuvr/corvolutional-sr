@@ -28,10 +28,11 @@ class RT4KSR_Rep(nn.Module):
         self.gamma = nn.Parameter(torch.zeros(1))
         self.gaussian = torchvision.transforms.GaussianBlur(kernel_size=5, sigma=1)
         
-        self.down = nn.PixelUnshuffle(2)
-        self.up = nn.PixelShuffle(2)
-        self.head = nn.Sequential(nn.Conv2d(num_channels * (2**2), num_feats, 3, padding=1))
-        
+        r: int = 2
+        self.down = nn.PixelUnshuffle(r)
+        self.up = nn.PixelShuffle(r)
+        self.head = nn.Sequential(nn.Conv2d(num_channels * (r**2), num_feats, 3, padding=1))
+        self.head_flow = nn.Sequential(nn.Conv2d(2 * (r**2), num_feats, 3, padding=1))
         
         hfb = []
         if is_train:
@@ -62,22 +63,31 @@ class RT4KSR_Rep(nn.Module):
             nn.PixelShuffle(upscale*2)            
         )
         
-    def forward(self, x):
-        # stage 1
-        lr_img, flow = x
-        hf     = lr_img - self.gaussian(lr_img)
-        # hf_flo = flow - self.gaussian(flow)
+    def forward(self, x, y):
+        FLOW_HEAD: bool = True
+        # Low Res Image: [1, 3, 218, 512] - RGB
+        # Flow:          [1, 2, 218, 512] - dx/dy
+        lr_img = x
+        flow   = y
+        hf = lr_img - self.gaussian(lr_img)
+        hf_flo = flow - self.gaussian(flow)
 
-        # unshuffle to save computation
+        # Unshuffle to save computation
         x_unsh  = self.down(lr_img)
         hf_unsh = self.down(hf)
-        
+        hf_flo_unsh = self.down(hf_flo)
+
+        # RuntimeError: Given groups=1, weight of size [24, 12, 3, 3], expected input[1, 8, 109, 256] to have 12 channels, but got 8 channels instead
         shallow_feats_hf = self.head(hf_unsh)        
+        shallow_feats_hf_flo = self.head_flow(hf_flo_unsh)        
         shallow_feats_lr = self.head(x_unsh)
 
         # stage 2            
         deep_feats = self.body(shallow_feats_lr)
-        hf_feats   = self.hfb(shallow_feats_hf)
+        if FLOW_HEAD:
+            hf_feats   = self.hfb(shallow_feats_hf + shallow_feats_hf_flo)
+        else:
+            hf_feats   = self.hfb(shallow_feats_hf)
 
         # stage 3
         if self.forget:

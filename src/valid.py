@@ -47,11 +47,11 @@ class CorvolutionalLoader():
         self.loss_fn = torch.nn.functional.l1_loss
         self.net     = net
        
-    def upscale(self, img: torch.Tensor):
+    def upscale(self, img: torch.Tensor, flo: torch.Tensor):
         if self.config.bicubic:
             out = F.interpolate(img, scale_factor=self.config.scale, mode="bicubic", align_corners=False).clamp(min=0, max=1)
         else:
-            out = self.net(img)
+            out = self.net(img, flo)
         return out
     
     @torch.no_grad()
@@ -62,7 +62,7 @@ class CorvolutionalLoader():
                 dataset["test"],
                 batch_size=1,
                 num_workers=1,
-                pin_memory=True,
+                pin_memory=False,
                 shuffle=False, 
                 drop_last=False
             )
@@ -72,7 +72,7 @@ class CorvolutionalLoader():
                 flow   = batch["fl"].to(self.device)
                 # Upscale
                 gauge.timer_set()
-                sr_img = self.upscale((lr_img, flow))
+                sr_img = self.upscale(lr_img, flow)
                 gauge.timer_reset()
                 
                 gauge.extract_metrics(sr_img, hr_img)
@@ -85,32 +85,33 @@ class CorvolutionalLoader():
                 dataset["train"],
                 batch_size=1,
                 num_workers=1,
-                pin_memory=True,
+                pin_memory=False,
                 shuffle=False, 
                 drop_last=False
             )
-            optimizer = torch.optim.SGD(self.net.parameters(), lr=1e-4, momentum=0.9)  
+            optimizer = torch.optim.SGD(self.net.parameters(), lr=1e-4)  
             for batch in tqdm(test_loader):
-                lr_img = batch["lr"].to(self.device)
-                hr_img = batch["hr"].to(self.device)
-                flow   = batch["fl"].to(self.device)
+                with torch.no_grad():
+                    lr_img = batch["lr"].to(self.device)
+                    hr_img = batch["hr"].to(self.device)
+                    flow   = batch["fl"].to(self.device)
                 # Upscale
                 gauge.timer_set()
-                sr_img = self.upscale((lr_img, flow))
+                sr_img = self.upscale(lr_img, flow)
                 gauge.timer_reset()
                 
                 loss = self.loss_fn(sr_img, hr_img)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-
-                gauge.extract_metrics(sr_img, hr_img)
+                
+                # Fix memory leak with detach() 
+                gauge.extract_metrics(sr_img.detach(), hr_img.detach())
         return gauge
 
 if __name__ == "__main__":
-    
     c = CorvolutionalLoader(config=args)
-    num_epochs: int = 2
+    num_epochs: int = 1
     num_rounds: int = 2
     train_metrics = Counter()
     test_metrics  = Counter()

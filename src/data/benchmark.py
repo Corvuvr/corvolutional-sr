@@ -52,7 +52,8 @@ class Benchmark(BaseDataset):
         if flo_filepath := self.fl_files[idx]:
             fl: torch.Tensor = self.degrade(read_flo_file(flo_filepath).permute(2,0,1))[0]
         else:
-            fl: torch.Tensor = torch.empty(size=lr.shape)
+            flow_shape: tuple[int] = (2,lr.shape[1],lr.shape[2])
+            fl: torch.Tensor = torch.empty(flow_shape)
 
         # assert that images are divisable by 2
         c, lr_h, lr_w = lr.shape
