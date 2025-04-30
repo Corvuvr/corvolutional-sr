@@ -1,6 +1,9 @@
+import cv2
+from datetime import datetime
 import logging
 import torch
 import torch.nn.functional as F
+from pathlib import Path
 from tqdm import tqdm
 from pprint import pp
 from typing import Sequence
@@ -56,26 +59,38 @@ class CorvolutionalLoader():
     
     @torch.no_grad()
     def evaluate(self):
+        run_date = datetime.now().strftime("%Y.%m.%d-%H.%M.%S") 
         gauge = metrics.MetricGauge(log_level=logging.root.level)
         for i, dataset in enumerate(self.datasets):
             test_loader = torch.utils.data.DataLoader(
                 dataset["test"],
                 batch_size=1,
                 num_workers=1,
-                pin_memory=False,
-                shuffle=False, 
+                pin_memory=True,
+                shuffle=True, 
                 drop_last=False
             )
             for batch in tqdm(test_loader):
                 lr_img = batch["lr"].to(self.device)
                 hr_img = batch["hr"].to(self.device)
                 flow   = batch["fl"].to(self.device)
+                name   = batch["name"][0]
+                folder = batch["folder"][0]
+
                 # Upscale
                 gauge.timer_set()
                 sr_img = self.upscale(lr_img, flow)
                 gauge.timer_reset()
-                
+                gauge.metrics["loss"].append(float(torch.nn.functional.l1_loss(sr_img, hr_img)))
                 gauge.extract_metrics(sr_img, hr_img)
+
+                # Save img
+                SAV_FOLDER: str = "results"
+                cv2_image = image.tensor2uint(sr_img * 255)
+                cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
+                img_folder = f"{SAV_FOLDER}/{run_date}/{folder}"
+                Path(img_folder).mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(f"{img_folder}/{name}.jpg", cv2_image)
         return gauge
 
     def fit(self):
@@ -85,11 +100,16 @@ class CorvolutionalLoader():
                 dataset["train"],
                 batch_size=1,
                 num_workers=1,
-                pin_memory=False,
-                shuffle=False, 
+                pin_memory=True,
+                shuffle=True, 
                 drop_last=False
             )
-            optimizer = torch.optim.SGD(self.net.parameters(), lr=1e-4)  
+            optimizer = torch.optim.AdamW(
+                params=self.net.parameters(), 
+                lr=1e-3,
+                betas=(0.9, 0.999),
+                weight_decay=0.5
+            )
             for batch in tqdm(test_loader):
                 with torch.no_grad():
                     lr_img = batch["lr"].to(self.device)
@@ -101,12 +121,19 @@ class CorvolutionalLoader():
                 gauge.timer_reset()
                 
                 loss = self.loss_fn(sr_img, hr_img)
+                loss_val = float(loss)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 
                 # Fix memory leak with detach() 
-                gauge.extract_metrics(sr_img.detach(), hr_img.detach())
+                sr_img.detach_()
+                hr_img.detach_()
+                gauge.extract_metrics(sr_img, hr_img)
+                
+                gauge.metrics["loss"].append(loss_val)
+
+        torch.save(self.net.state_dict(), f"flow_model.pth")
         return gauge
 
 if __name__ == "__main__":

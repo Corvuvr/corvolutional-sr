@@ -20,6 +20,7 @@ class MetricGauge():
         metrics_["ssim"   ] = []
         metrics_["psnr"   ] = []
         metrics_["time"   ] = []
+        metrics_["loss"   ] = []
         self.metrics = metrics_
         self.logger  = logger
         self.timer: float = time.time()
@@ -30,20 +31,14 @@ class MetricGauge():
         img1, img2 = img1.to('cpu'), img2.to('cpu')
         self.metrics["ssim"].append(ssim(img1, img2))
         self.metrics["psnr"].append(psnr(img1, img2))
+
     def avg(self):
         avg = dict()
         avg["ssim"   ] = float(sum(self.metrics["ssim"]) / len(self.metrics["ssim"]))
         avg["psnr"   ] = float(sum(self.metrics["psnr"]) / len(self.metrics["psnr"]))
         avg["time"   ] = float(sum(self.metrics["time"]) / len(self.metrics["time"]))
+        avg["loss"   ] = float(sum(self.metrics["loss"]) / len(self.metrics["loss"])) if len(self.metrics["loss"]) != 0 else 0
         return avg
-
-    def summary(self):
-        ave_psnr = sum(self.metrics["psnr"]) / len(self.metrics["psnr"])
-        ave_ssim = sum(self.metrics["ssim"]) / len(self.metrics["ssim"])      
-        ave_time = sum(self.metrics["time"]) / len(self.metrics["time"]) 
-        self.logger.info(' Average PSNR:\t{:.6f} dB'.format(ave_psnr))
-        self.logger.info(' Average SSIM:\t{:.6f}'   .format(ave_ssim))
-        self.logger.info(' Average Time:\t{:.6f}'   .format(ave_time))   
 
     def timer_set(self):
         self.timer = time.time()

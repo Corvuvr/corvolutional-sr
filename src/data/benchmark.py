@@ -34,9 +34,11 @@ class Benchmark(BaseDataset):
         
         self.hr_dir_path = Path(dataroot).resolve().joinpath(img_path)
         self.fl_dir_path = Path(dataroot).resolve().joinpath(flo_path)
-        self.hr_files = sorted(self.hr_dir_path.rglob(f'**/*.{img_type}'))
+        self.hr_files: Sequence[Path] = sorted(self.hr_dir_path.rglob(f'**/*.{img_type}'))
         # For every given image: search corresponding .flo file. If not found: correspond to None 
-        self.fl_files = [(self.fl_dir_path).__str__() + f'/{x.stem}.flo' for x in self.hr_files]
+        self.fl_files: str | None = [
+            (self.fl_dir_path).__str__() + f'/{x.stem}.flo' for x in self.hr_files
+        ]
         self.fl_files = [x if Path(x).exists() else None for x in self.fl_files]
         self.transforms = transforms.Compose([
             transforms.ToTensor(rgb_range=self.rgb_range)
@@ -45,7 +47,8 @@ class Benchmark(BaseDataset):
         
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         idx = self._get_index(index)
-        hr = Image.open(self.hr_files[idx]).convert("RGB")
+        filepath: Path = self.hr_files[idx]
+        hr = Image.open(filepath).convert("RGB")
         hr = self.transforms(hr)
         lr, hr = self.degrade(hr)
         # If None for given image - pair with empty tensor
@@ -63,10 +66,13 @@ class Benchmark(BaseDataset):
         assert lr.shape[-1] * self.scale == hr.shape[-1]
         assert lr.shape[-2] * self.scale == hr.shape[-2]
 
+        
         return {
             "lr": lr.to(torch.float32), 
             "hr": hr.to(torch.float32),
             "fl": fl.to(torch.float32),
+            "name":     filepath.stem,
+            "folder":   filepath.parent.stem
         }
     
     def __len__(self):
