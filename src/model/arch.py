@@ -26,6 +26,7 @@ class RT4KSR_Rep(nn.Module):
         super().__init__()
         self.forget = forget
         self.gamma = nn.Parameter(torch.zeros(1))
+        self.gamma_flow = nn.Parameter(torch.zeros(1))
         self.gaussian = torchvision.transforms.GaussianBlur(kernel_size=5, sigma=1)
         
         r: int = 2
@@ -64,30 +65,27 @@ class RT4KSR_Rep(nn.Module):
         )
         
     def forward(self, x, y):
-        FLOW_HEAD: bool = True
-        # Low Res Image: [1, 3, 218, 512] - RGB
-        # Flow:          [1, 2, 218, 512] - dx/dy
+        # Low Res Image: [1, 3, 218, 512] - R,G,B
+        # Flow:          [1, 2, 218, 512] - dx,dy
         lr_img = x
         flow   = y
-        hf = lr_img - self.gaussian(lr_img)
-        hf_flo = flow - self.gaussian(flow)
+        hf = lr_img - self.gaussian(lr_img)            
+        ff = flow - self.gaussian(flow)            
 
         # Unshuffle to save computation
         x_unsh  = self.down(lr_img)
         hf_unsh = self.down(hf)
-        hf_flo_unsh = self.down(hf_flo)
+        ff_unsh = self.down(ff)
 
         # RuntimeError: Given groups=1, weight of size [24, 12, 3, 3], expected input[1, 8, 109, 256] to have 12 channels, but got 8 channels instead
-        shallow_feats_hf = self.head(hf_unsh)        
-        shallow_feats_hf_flo = self.head_flow(hf_flo_unsh)        
+        shallow_feats_hf = self.head(hf_unsh)
         shallow_feats_lr = self.head(x_unsh)
+        shallow_feats_ff = self.head_flow(ff_unsh)
 
         # stage 2            
         deep_feats = self.body(shallow_feats_lr)
-        if FLOW_HEAD:
-            hf_feats   = self.hfb(shallow_feats_hf + shallow_feats_hf_flo)
-        else:
-            hf_feats   = self.hfb(shallow_feats_hf)
+        hf_feats   = self.hfb(shallow_feats_hf)
+        # hf_feats   = self.hfb(shallow_feats_hf + shallow_feats_ff)
 
         # stage 3
         if self.forget:
@@ -111,7 +109,7 @@ def rt4ksr_rep(config):
                        upscale=config.scale,
                        act=act,
                        eca_gamma=0,
-                       forget=False,
+                       forget=True,
                        is_train=config.is_train,
                        layernorm=True,
                        residual=False)
