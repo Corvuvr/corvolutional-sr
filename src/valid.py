@@ -50,9 +50,13 @@ class CorvolutionalLoader():
         )
         self.config  = config
         self.device  = device
-        self.loss    = torch.nn.functional.l1_loss
+        self.loss    = self.l1_mssim
         self.net     = net
     
+    def l1_mssim(self, img1: torch.Tensor, img2: torch.Tensor, alpha: float = 0.84) -> torch.Tensor:
+        return (torch.ones(1).to(self.device) - MSSSIM(data_range=1.0).to(self.device)(img1, img2)) * alpha \
+               + torch.nn.functional.l1_loss(img1, img2) * (1 - alpha)
+
     def upscale(self, img: torch.Tensor, flo: torch.Tensor):
         if self.config.bicubic:
             out = F.interpolate(img, scale_factor=self.config.scale, mode="bicubic", align_corners=False).clamp(min=0, max=1)
@@ -155,8 +159,8 @@ if __name__ == "__main__":
     c = CorvolutionalLoader(config=args)
     
     # Training loop
-    num_epochs: int = 1
-    num_rounds: int = 2
+    num_epochs: int = 5
+    num_rounds: int = 7
     train_metrics, test_metrics = Counter(), Counter()
     for round_id in range(num_rounds):
         epoch_counter = Counter()
