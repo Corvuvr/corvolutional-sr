@@ -36,10 +36,11 @@ class Benchmark(BaseDataset):
         self.fl_dir_path = Path(dataroot).resolve().joinpath(flo_path)
         self.hr_files: Sequence[Path] = sorted(self.hr_dir_path.rglob(f'**/*.{img_type}'))
         # For every given image: search corresponding .flo file. If not found: correspond to None 
-        self.fl_files: str | None = [
-            (self.fl_dir_path).__str__() + f'/{x.stem}.flo' for x in self.hr_files
+        flo_type = 'flo'
+        self.fl_files: Sequence[str | None] = [
+            (self.fl_dir_path).__str__() + f'/{x.parent.stem}/{x.stem}.{flo_type}' for x in self.hr_files
         ]
-        self.fl_files = [x if Path(x).exists() else None for x in self.fl_files]
+        self.fl_files = [(x if Path(x).exists() else None) for x in self.fl_files]
         self.transforms = transforms.Compose([
             transforms.ToTensor(rgb_range=self.rgb_range)
         ])
@@ -47,8 +48,8 @@ class Benchmark(BaseDataset):
         
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         idx = self._get_index(index)
-        filepath: Path = self.hr_files[idx]
-        hr = Image.open(filepath).convert("RGB")
+        hr_filepath: Path = self.hr_files[idx]
+        hr = Image.open(hr_filepath).convert("RGB")
         hr = self.transforms(hr)
         lr, hr = self.degrade(hr)
         # If None for given image - pair with empty tensor
@@ -56,7 +57,7 @@ class Benchmark(BaseDataset):
             fl: torch.Tensor = self.degrade(read_flo_file(flo_filepath).permute(2,0,1))[0]
         else:
             flow_shape: tuple[int] = (2,lr.shape[1],lr.shape[2])
-            fl: torch.Tensor = torch.empty(flow_shape)
+            fl: torch.Tensor = torch.zeros(flow_shape)
 
         # assert that images are divisable by 2
         c, lr_h, lr_w = lr.shape
@@ -65,14 +66,12 @@ class Benchmark(BaseDataset):
         hr = hr[:, :lr.shape[-2] * self.scale, :lr.shape[-1] * self.scale]
         assert lr.shape[-1] * self.scale == hr.shape[-1]
         assert lr.shape[-2] * self.scale == hr.shape[-2]
-
-        
         return {
             "lr": lr.to(torch.float32), 
             "hr": hr.to(torch.float32),
             "fl": fl.to(torch.float32),
-            "name":     filepath.stem,
-            "folder":   filepath.parent.stem
+            "name":     hr_filepath.stem,
+            "folder":   hr_filepath.parent.stem
         }
     
     def __len__(self):
