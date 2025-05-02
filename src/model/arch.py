@@ -20,11 +20,13 @@ class RT4KSR_Rep(nn.Module):
                  act,
                  eca_gamma,
                  is_train,
-                 forget,
                  layernorm,
-                 residual) -> None:
+                 residual,
+                 forward: str = 'vanilla'
+                 ) -> None:
         super().__init__()
-        self.forget = forget
+        self.forward_option = forward
+        print(f"Running {self.forward_option}...")
         self.gamma = nn.Parameter(torch.zeros(1))
         self.gamma_flow = nn.Parameter(torch.zeros(1))
         self.gaussian = torchvision.transforms.GaussianBlur(kernel_size=5, sigma=1)
@@ -32,9 +34,10 @@ class RT4KSR_Rep(nn.Module):
         r: int = 2
         self.down = nn.PixelUnshuffle(r)
         self.up = nn.PixelShuffle(r)
-        self.head = nn.Sequential(nn.Conv2d(num_channels * (r**2), num_feats, 3, padding=1))
-        self.head_flow = nn.Sequential(nn.Conv2d(2 * (r**2), num_feats, 3, padding=1))
-        
+        # Different Conv Layers
+        self.head        = nn.Sequential(nn.Conv2d(num_channels * (r**2), num_feats, 3, padding=1))
+        self.head_flow   = nn.Sequential(nn.Conv2d(2 * (r**2), num_feats, 3, padding=1))
+        self.head_common = nn.Sequential(nn.Conv2d(5 * (r**2), num_feats, 3, padding=1))
         hfb = []
         if is_train:
             hfb.append(ResBlock(num_feats, ratio=2))
@@ -65,38 +68,112 @@ class RT4KSR_Rep(nn.Module):
         )
         
     def forward(self, x, y):
-        # Low Res Image: [1, 3, 218, 512] - R,G,B
-        # Flow:          [1, 2, 218, 512] - dx,dy
-        lr_img = x
-        flow   = y
-        hf = lr_img - self.gaussian(lr_img)            
-        ff = flow - self.gaussian(flow)            
+        match self.forward_option:
+            case 'vanilla':
+                return self.forward_vanilla(x,y)
+            case 'vanilla_hf':
+                return self.forward_vanilla_hf(x,y)
+            case 'flow':
+                return self.forward_flow(x,y)
+            case 'flow_cat':
+                return self.forward_flow_cat(x,y)
+            case _:
+                return self.forward_vanilla(x,y)
 
-        # Unshuffle to save computation
+
+    def forward_vanilla(self, x, y):
+        lr_img = x 
+        # Unshuffle
         x_unsh  = self.down(lr_img)
-        hf_unsh = self.down(hf)
-        ff_unsh = self.down(ff)
-
-        # RuntimeError: Given groups=1, weight of size [24, 12, 3, 3], expected input[1, 8, 109, 256] to have 12 channels, but got 8 channels instead
-        shallow_feats_hf = self.head(hf_unsh)
+        # Conv
         shallow_feats_lr = self.head(x_unsh)
-        shallow_feats_ff = self.head_flow(ff_unsh)
-
-        # stage 2            
+        # NAF          
         deep_feats = self.body(shallow_feats_lr)
-        hf_feats   = self.hfb(shallow_feats_hf)
-        # hf_feats   = self.hfb(shallow_feats_hf + shallow_feats_ff)
-
-        # stage 3
-        if self.forget:
-            deep_feats = self.tail(self.gamma * deep_feats + hf_feats)
-        else:
-            deep_feats = self.tail(deep_feats)
-
+        # ResBlock
+        deep_feats = self.tail(deep_feats)
+        # Conv + Shuffle
         out = self.upsample(deep_feats)        
         return out
     
-    
+    def forward_vanilla_hf(self, x, y):
+        lr_img = x
+        hf = lr_img - self.gaussian(lr_img)                  
+        # Unshuffle
+        x_unsh  = self.down(lr_img)
+        hf_unsh = self.down(hf)
+        # Conv
+        shallow_feats_hf = self.head(hf_unsh)
+        shallow_feats_lr = self.head(x_unsh)
+        # NAF           
+        deep_feats = self.body(shallow_feats_lr)
+        # HFB
+        hf_feats = self.hfb(shallow_feats_hf)
+        # ResBlock
+        deep_feats = self.tail(
+            self.gamma * deep_feats + \
+            hf_feats
+        )
+        # Conv + Shuffle
+        out = self.upsample(deep_feats)        
+        return out   
+
+    def forward_flow(self, x, y):
+        lr_img = x
+        flow = y
+        # High Frequency Features
+        hf = lr_img - self.gaussian(lr_img)            
+        ff = flow   - self.gaussian(flow)                    
+        # Unshuffle
+        x_unsh  = self.down(lr_img)
+        hf_unsh = self.down(hf)
+        ff_unsh = self.down(ff)
+        # Conv
+        shallow_feats_hf = self.head(hf_unsh)
+        shallow_feats_lr = self.head(x_unsh)
+        shallow_feats_ff = self.head_flow(ff_unsh)
+        # NAF
+        with torch.no_grad():
+            deep_feats = self.body(shallow_feats_lr)
+        # HFB
+        hf_feats   = self.hfb(shallow_feats_hf)
+        ff_feats   = self.hfb(shallow_feats_ff)
+        # ResBlock
+        deep_feats = self.tail(
+            self.gamma * deep_feats + \
+            self.gamma_flow * ff_feats + \
+            hf_feats
+        )
+        # Conv + Shuffle
+        out = self.upsample(deep_feats)        
+        return out  
+
+    def forward_flow_cat(self, x, y):
+        lr_img = x
+        flow = y
+        # Prep Data
+        channel_stack = torch.cat((lr_img, flow), dim=1)        # [1, 5,  218, 512]
+        hf_stack = channel_stack - self.gaussian(channel_stack) # [1, 5,  218, 512]
+        # Unshuffle
+        hf_stack_unsh = self.down(hf_stack)                     # [1, 20, 109, 256]
+        x_unsh        = self.down(lr_img)
+        # Conv
+        with torch.no_grad():
+            deep_feats_conv = self.head(x_unsh)
+        hf_stack_conv    = self.head_common(hf_stack_unsh)      # [1, 24, 109, 256]
+        # NAF
+        deep_feats = self.body(deep_feats_conv)
+        # HFB
+        hf_feats = self.hfb(hf_stack_conv)
+        # ResBlock
+        deep_feats = self.tail(
+            self.gamma * deep_feats + \
+            self.gamma_flow * hf_feats + \
+            hf_feats
+        )
+        # Conv + Shuffle
+        out = self.upsample(deep_feats)        
+        return out  
+
 ####################################
 # RETURN INITIALIZED MODEL INSTANCES
 ####################################
@@ -109,7 +186,7 @@ def rt4ksr_rep(config):
                        upscale=config.scale,
                        act=act,
                        eca_gamma=0,
-                       forget=True,
+                       forward=config.forward_option,
                        is_train=config.is_train,
                        layernorm=True,
                        residual=False)

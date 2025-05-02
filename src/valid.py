@@ -61,7 +61,7 @@ class CorvolutionalLoader():
     def evaluate(self):
         run_date = datetime.now().strftime("%Y.%m.%d-%H.%M.%S") 
         gauge = metrics.MetricGauge(log_level=logging.root.level)
-        for i, dataset in enumerate(self.datasets):
+        for _, dataset in enumerate(self.datasets):
             test_loader = torch.utils.data.DataLoader(
                 dataset["test"],
                 batch_size=1,
@@ -106,7 +106,7 @@ class CorvolutionalLoader():
             )
             optimizer = torch.optim.AdamW(
                 params=self.net.parameters(), 
-                lr=1e-3,
+                lr=1e-4,
                 betas=(0.9, 0.999),
                 weight_decay=0.5
             )
@@ -115,6 +115,7 @@ class CorvolutionalLoader():
                     lr_img = batch["lr"].to(self.device)
                     hr_img = batch["hr"].to(self.device)
                     flow   = batch["fl"].to(self.device)
+                # print(f"{flow.max()=} {flow.min()=}")
                 # Upscale
                 gauge.timer_set()
                 sr_img = self.upscale(lr_img, flow)
@@ -129,6 +130,7 @@ class CorvolutionalLoader():
                 # Fix memory leak with detach() 
                 sr_img.detach_()
                 hr_img.detach_()
+                flow.detach_()
                 gauge.extract_metrics(sr_img, hr_img)
                 
                 gauge.metrics["loss"].append(loss_val)
@@ -138,8 +140,8 @@ class CorvolutionalLoader():
 
 if __name__ == "__main__":
     c = CorvolutionalLoader(config=args)
-    num_epochs: int = 1
-    num_rounds: int = 2
+    num_epochs: int = 5
+    num_rounds: int = 10
     train_metrics = Counter()
     test_metrics  = Counter()
     for i in range(num_rounds):

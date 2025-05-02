@@ -14,6 +14,7 @@ def base_parser():
     # model definitions
     parser.add_argument("--bicubic", action="store_true")
     parser.add_argument("--arch", type=str, default="rt4ksr_rep")
+    parser.add_argument("--forward-opt", type=str, default="vanilla", dest='forward_option')
     parser.add_argument("--feature-channels", type=int, default=24)
     parser.add_argument("--num-blocks", type=int, default=4)
     parser.add_argument("--act-type", type=str, default="gelu", choices=["relu", "lrelu", "gelu"])
