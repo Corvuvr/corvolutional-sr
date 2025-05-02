@@ -1,14 +1,17 @@
-import cv2
-from datetime import datetime
+import json
 import logging
-import torch
-import torch.nn.functional as F
-from pathlib import Path
 from tqdm import tqdm
 from pprint import pp
 from typing import Sequence
+from pathlib import Path
+from datetime import datetime
 from collections import Counter
 from argparse import ArgumentParser
+
+import cv2
+import torch
+import torch.nn.functional as F
+from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure as MSSSIM
 
 import data
 import model
@@ -47,9 +50,9 @@ class CorvolutionalLoader():
         )
         self.config  = config
         self.device  = device
-        self.loss_fn = torch.nn.functional.l1_loss
+        self.loss    = torch.nn.functional.l1_loss
         self.net     = net
-       
+    
     def upscale(self, img: torch.Tensor, flo: torch.Tensor):
         if self.config.bicubic:
             out = F.interpolate(img, scale_factor=self.config.scale, mode="bicubic", align_corners=False).clamp(min=0, max=1)
@@ -59,9 +62,8 @@ class CorvolutionalLoader():
     
     @torch.no_grad()
     def evaluate(self):
-        run_date = datetime.now().strftime("%Y.%m.%d-%H.%M.%S") 
         gauge = metrics.MetricGauge(log_level=logging.root.level)
-        for _, dataset in enumerate(self.datasets):
+        for dataset in self.datasets:
             test_loader = torch.utils.data.DataLoader(
                 dataset["test"],
                 batch_size=1,
@@ -71,6 +73,7 @@ class CorvolutionalLoader():
                 drop_last=False
             )
             for batch in tqdm(test_loader):
+                
                 lr_img = batch["lr"].to(self.device)
                 hr_img = batch["hr"].to(self.device)
                 flow   = batch["fl"].to(self.device)
@@ -81,21 +84,23 @@ class CorvolutionalLoader():
                 gauge.timer_set()
                 sr_img = self.upscale(lr_img, flow)
                 gauge.timer_reset()
-                gauge.metrics["loss"].append(float(torch.nn.functional.l1_loss(sr_img, hr_img)))
+                gauge.metrics["loss"].append(float(self.loss(sr_img, hr_img)))
                 gauge.extract_metrics(sr_img, hr_img)
 
                 # Save img
-                SAV_FOLDER: str = "results"
+                global SAVE_FOLDER
+                global round_id
                 cv2_image = image.tensor2uint(sr_img * 255)
                 cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
-                img_folder = f"{SAV_FOLDER}/{run_date}/{folder}"
+                img_folder = f"{SAVE_FOLDER}/round_{round_id}/{folder}"
                 Path(img_folder).mkdir(parents=True, exist_ok=True)
                 cv2.imwrite(f"{img_folder}/{name}.jpg", cv2_image)
+        
         return gauge
 
     def fit(self):
         gauge = metrics.MetricGauge(log_level=logging.root.level)
-        for i, dataset in enumerate(self.datasets):
+        for dataset in self.datasets:
             test_loader = torch.utils.data.DataLoader(
                 dataset["train"],
                 batch_size=1,
@@ -111,18 +116,16 @@ class CorvolutionalLoader():
                 weight_decay=0.5
             )
             for batch in tqdm(test_loader):
-                with torch.no_grad():
-                    lr_img = batch["lr"].to(self.device)
-                    hr_img = batch["hr"].to(self.device)
-                    flow   = batch["fl"].to(self.device)
-                # print(f"{flow.max()=} {flow.min()=}")
+                
+                lr_img = batch["lr"].to(self.device)
+                hr_img = batch["hr"].to(self.device)
+                flow   = batch["fl"].to(self.device)
+                
                 # Upscale
                 gauge.timer_set()
                 sr_img = self.upscale(lr_img, flow)
                 gauge.timer_reset()
-                
-                loss = self.loss_fn(sr_img, hr_img)
-                loss_val = float(loss)
+                loss = self.loss(sr_img, hr_img)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -131,26 +134,43 @@ class CorvolutionalLoader():
                 sr_img.detach_()
                 hr_img.detach_()
                 flow.detach_()
+                gauge.metrics["loss"].append(float(loss))
                 gauge.extract_metrics(sr_img, hr_img)
-                
-                gauge.metrics["loss"].append(loss_val)
-
-        torch.save(self.net.state_dict(), f"flow_model.pth")
+        
+        # Save weights
+        global SAVE_FOLDER
+        global round_id
+        weight_folder: str = f"{SAVE_FOLDER}/round_{round_id}"
+        Path(weight_folder).mkdir(parents=True, exist_ok=True)
+        torch.save(self.net.state_dict(), f"{weight_folder}/weights.pth")
         return gauge
 
 if __name__ == "__main__":
+    
+    # Setup artifacts folder
+    SAVE_FOLDER: str = f'results/{datetime.now().strftime("%Y.%m.%d-%H.%M.%S")}'
+    Path(SAVE_FOLDER).mkdir(parents=True, exist_ok=True)
+
+    # Load model
     c = CorvolutionalLoader(config=args)
-    num_epochs: int = 5
-    num_rounds: int = 10
-    train_metrics = Counter()
-    test_metrics  = Counter()
-    for i in range(num_rounds):
+    
+    # Training loop
+    num_epochs: int = 1
+    num_rounds: int = 2
+    train_metrics, test_metrics = Counter(), Counter()
+    for round_id in range(num_rounds):
         epoch_counter = Counter()
-        for epoch in range(num_epochs):
-            performance = c.fit()
-            epoch_counter.update(performance.avg())
+        for _ in range(num_epochs):
+            epoch_counter.update(c.fit().avg())
         train_metrics.update(dict(map(lambda kv: (kv[0], [kv[1] / num_epochs]), dict(epoch_counter).items())))
         test_metrics .update(dict(map(lambda kv: (kv[0], [kv[1]]), c.evaluate().avg().items())))
-    pp(train_metrics)
-    pp(test_metrics)
+    
+    # Save logs
+    with open(f"{SAVE_FOLDER}/metrics.json", 'w', encoding='utf-8') as f:
+        json.dump(
+            [args.__dict__, dict(train_metrics), dict(test_metrics)], 
+            f,
+            ensure_ascii=False, 
+            indent=4
+        )
         
