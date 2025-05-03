@@ -50,10 +50,19 @@ class CorvolutionalLoader():
         )
         self.config  = config
         self.device  = device
-        self.loss    = self.l1_mssim
+        self.loss    = self.set_loss(loss=config.loss)
         self.net     = net
     
-    def l1_mssim(self, img1: torch.Tensor, img2: torch.Tensor, alpha: float = 0.84) -> torch.Tensor:
+    def set_loss(self, loss: str):
+        match loss:
+            case 'l1_msssim':
+                return self.l1_msssim
+            case 'l1':
+                return torch.nn.functional.l1_loss
+            case _:
+                return torch.nn.functional.mse_loss
+
+    def l1_msssim(self, img1: torch.Tensor, img2: torch.Tensor, alpha: float = 0.84) -> torch.Tensor:
         return (torch.ones(1).to(self.device) - MSSSIM(data_range=1.0).to(self.device)(img1, img2)) * alpha \
                + torch.nn.functional.l1_loss(img1, img2) * (1 - alpha)
 
@@ -159,8 +168,8 @@ if __name__ == "__main__":
     c = CorvolutionalLoader(config=args)
     
     # Training loop
-    num_epochs: int = 5
-    num_rounds: int = 7
+    num_epochs: int = args.num_epochs_per_round
+    num_rounds: int = args.num_rounds
     train_metrics, test_metrics = Counter(), Counter()
     for round_id in range(num_rounds):
         epoch_counter = Counter()

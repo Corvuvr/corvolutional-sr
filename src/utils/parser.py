@@ -1,7 +1,6 @@
 import os
 import pathlib
 import argparse
-import torch
 
 def base_parser():
     parser = argparse.ArgumentParser()
@@ -14,9 +13,12 @@ def base_parser():
     # model definitions
     parser.add_argument("--bicubic", action="store_true")
     parser.add_argument("--arch", type=str, default="rt4ksr_rep")
-    parser.add_argument("--forward-opt", type=str, default="vanilla", dest='forward_option')
+    parser.add_argument("--loss", type=str, default="l2", choices=['l1','l2','l1_msssim'])
+    parser.add_argument("--forward-opt", type=str, default="vanilla", dest='forward_option', choices=['vanilla', 'vanilla_hf', 'flow', 'flow_cat'])
     parser.add_argument("--feature-channels", type=int, default=24)
     parser.add_argument("--num-blocks", type=int, default=4)
+    parser.add_argument("--num-rounds", type=int, default=1)
+    parser.add_argument("--num-epochs-per-round", type=int, default=1)
     parser.add_argument("--act-type", type=str, default="gelu", choices=["relu", "lrelu", "gelu"])
     parser.add_argument("--is-train", action="store_true", help="Switch between training and inference mode for reparameterizable blocks.")
     parser.add_argument("--rep", action="store_true", help="Run inference with reparameterized version.")
