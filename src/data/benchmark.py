@@ -129,7 +129,7 @@ def show_flow(flow):
     plt.title('Optical Flow Visualization')
     plt.show()
 
-def sintel(config):
+def sintel_mountains(config):
     return Benchmark(
         dataroot=config.dataroot, 
         name="Sintel",
@@ -139,6 +139,7 @@ def sintel(config):
         img_path="training/clean/mountain_1",
         flo_path="training/flow/mountain_1"
     )
+
 def sintel_full(config):
     return Benchmark(
         dataroot=config.dataroot, 
