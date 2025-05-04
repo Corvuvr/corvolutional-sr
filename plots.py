@@ -1,8 +1,10 @@
+import os
 import json
-
-from pprint import pp
+import subprocess
+import datetime as dt
 from typing import Sequence
 from pathlib import Path
+from pprint import pp
 from functools import cmp_to_key
 
 import cv2
@@ -75,19 +77,25 @@ def sav_plt(records: Sequence, metric: str, filepath: str = 'plots'):
     cv2.imwrite(filename=f'{filepath}/{metric}.jpg', img=plot)
 
 
-json_files: Sequence[str | Path] = [
-    # ========= PASTE YOUR METRICS HERE =========
-    # Use 'find . -name metrics.json' command in bash
-    "./results/2025.05.03-07.18.04/metrics.json",
-    "./results/2025.05.03-09.17.17/metrics.json",
-    "./results/2025.05.03-11.04.44/metrics.json",
-    "./results/2025.05.03-12.51.37/metrics.json",
-    "./results/2025.05.03-14.38.19/metrics.json",
-    "./results/2025.05.03-16.20.38/metrics.json",
-    "./results/2025.05.03-18.07.01/metrics.json",
-    "./results/2025.05.03-19.55.44/metrics.json",
-    "./results/2025.05.03-21.40.32/metrics.json",
-]
+# THIS CODE ASSUMES YOU HAVE ALREADY RUN TESTS WITH:
+# 3 loss functions - ['l1_msssim', 'l1', 'l2'] 
+# 3 architectures  - ['vanilla_hf', 'flow', 'flow_cat'] 
+# 3 * 3 = 9 JSON FILES IN TOTAL 
+# PASTE MODIFIED DATE OF THE FIRST OF 9 TEST FILES BELOW:
+since: str = '2025.05.03-07.18.04'
+up_to: int = 9
+
+cmd: str = 'find . -name metrics.json'
+cmd_output: str = subprocess.run(cmd.split(sep=' '), capture_output=True).stdout.decode()
+json_files: Sequence[str | Path] = []
+for file in cmd_output.split():
+    date_modified: float = os.path.getmtime(file)
+    since_float:   float = dt.datetime.strptime(since, "%Y.%m.%d-%H.%M.%S").timestamp()
+    if date_modified >= since_float:
+        json_files.append(file)
+        if len(json_files) >= up_to:
+            break
+
 records: Sequence[Record] = [Record(filepath) for filepath in json_files]
 records = sorted(records, key=cmp_to_key(cmp_by_fwd))
 records = np.split(np.array(records), 3)
@@ -97,6 +105,7 @@ for bank in records:
 sav_plt(records, metric='psnr')
 sav_plt(records, metric='ssim')
 
+print("\nMAX SSIM ACROSS CLIENTS:")
 for bank in records:
     pp([ max(r.test_metrics['ssim']) for r in bank])
     # pp([[r.loss_type, r.fwd_type] for r in bank])
