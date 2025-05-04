@@ -12,7 +12,7 @@ def base_parser():
     
     # model definitions
     parser.add_argument("--bicubic", action="store_true")
-    parser.add_argument("--arch", type=str, default="rt4ksr_rep")
+    parser.add_argument("--arch", type=str, default="corvolutional_rep")
     parser.add_argument("--loss", type=str, default="l2", choices=['l1','l2','l1_msssim'])
     parser.add_argument("--forward-opt", type=str, default="vanilla", dest='forward_option', choices=['vanilla', 'vanilla_hf', 'flow', 'flow_cat'])
     parser.add_argument("--feature-channels", type=int, default=24)
