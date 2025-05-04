@@ -1,5 +1,6 @@
 __pycache__/
 results/
+plots/
 !README.md
 *pth
 *.py[cod]
