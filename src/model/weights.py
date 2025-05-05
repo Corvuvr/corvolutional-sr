@@ -4,13 +4,17 @@ import torch
 from typing import List
 import torch.nn.functional as F
 import model
+from pathlib import Path
 
 def load_checkpoint(model, device, time_stamp=None, strict: bool = True):       
     checkpoint = glob.glob(os.path.join("src/checkpoints", time_stamp + ".pth"))
     if isinstance(checkpoint, List):
         checkpoint = checkpoint.pop(0)
-    checkpoint = torch.load(checkpoint, map_location=device)
-    model.load_state_dict(checkpoint["state_dict"], strict=strict)
+    checkpoint_data = torch.load(checkpoint, map_location=device)
+    if Path(checkpoint).stem in ['rep_model_rt4ksr_x2', 'rt4ksr_x2', 'rt4ksr_x3']:
+        model.load_state_dict(checkpoint_data["state_dict"], strict=strict)
+    else:
+        model.load_state_dict(checkpoint_data, strict=strict)
     return model
 
 def reparameterize(config, net, device, save_rep_checkpoint=False):
