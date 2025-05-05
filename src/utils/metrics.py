@@ -33,8 +33,8 @@ class MetricGauge():
         psnr_val = psnr(img1, img2)
         if ssim_val.isnan().numpy().sum() != 0:
             raise Exception(f"Met nan value while counting ssim: {ssim_val}.")
-        self.metrics["ssim"].append(ssim_val)
-        self.metrics["psnr"].append(psnr_val)
+        self.metrics["ssim"].append(float(ssim_val))
+        self.metrics["psnr"].append(float(psnr_val))
 
     def avg(self):
         avg = dict()

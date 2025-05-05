@@ -82,7 +82,7 @@ class CorvolutionalLoader():
                 batch_size=1,
                 num_workers=1,
                 pin_memory=True,
-                shuffle=True, 
+                shuffle=False, 
                 drop_last=False
             )
             for batch in tqdm(test_loader):
@@ -166,22 +166,23 @@ if __name__ == "__main__":
 
     # Load model
     c = CorvolutionalLoader(config=args)
-    
     # Training loop
     num_epochs: int = args.num_epochs_per_round
     num_rounds: int = args.num_rounds
     train_metrics, test_metrics = Counter(), Counter()
+    flat_eval_metrics = []
     for round_id in range(num_rounds):
         epoch_counter = Counter()
         for _ in range(num_epochs):
             epoch_counter.update(c.fit().avg())
         train_metrics.update(dict(map(lambda kv: (kv[0], [kv[1] / num_epochs]), dict(epoch_counter).items())))
-        test_metrics .update(dict(map(lambda kv: (kv[0], [kv[1]]), c.evaluate().avg().items())))
-    
+        flat_round_metrics = c.evaluate()
+        test_metrics .update(dict(map(lambda kv: (kv[0], [kv[1]]), flat_round_metrics.avg().items())))
+        flat_eval_metrics.append(flat_round_metrics.metrics)
     # Save logs
     with open(f"{SAVE_FOLDER}/metrics.json", 'w', encoding='utf-8') as f:
         json.dump(
-            [args.__dict__, dict(train_metrics), dict(test_metrics)], 
+            [args.__dict__, dict(train_metrics), dict(test_metrics), flat_eval_metrics], 
             f,
             ensure_ascii=False, 
             indent=4
